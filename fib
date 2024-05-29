@@ -6,7 +6,7 @@ jpg .6
 hlt
 sub $1
 mov %ra [93]
-mov [91] %ra
+lda [91]
 add [92]
 mov %ra %rb
 mov [91] %rc
