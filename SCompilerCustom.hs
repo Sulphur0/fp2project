@@ -3,6 +3,7 @@ module SCompilerCustom where
 import Control.Monad.State
 import Data.Bits
 
+type FinalStack = [Int]
 type CallStack = ([Int],[Int])
 type AuxStack = ([Int],Int)
 type CodeStack = [String]
@@ -35,35 +36,54 @@ createCallStackElement (('[':addr):nargs) = do
     createCallStackElement nargs
 createCallStackElement (('$':val):nargs) = do
     (calls,argc) <- get
-    let ncall = read val
-    let ncalls = calls++[ncall]
+    let ncalls = calls++[read val]
+    put (ncalls,argc-1)
+    createCallStackElement nargs
+createCallStackElement (('.':lab):nargs) = do
+    (calls,argc) <- get
+    let ncalls = calls++[read lab]
     put (ncalls,argc-1)
     createCallStackElement nargs
 
 initializeCallStackElement :: String -> AuxStack
-initializeCallStackElement "hlt" = ([0X00],0)
-initializeCallStackElement "mov" = ([0X01],2)
-initializeCallStackElement "str" = ([0X02],2)
-initializeCallStackElement "jmp" = ([0X03],1)
-initializeCallStackElement "jpz" = ([0X04],1)
-initializeCallStackElement "jnz" = ([0X05],1)
-initializeCallStackElement "jpg" = ([0X06],1)
-initializeCallStackElement "jpl" = ([0X07],1)
-initializeCallStackElement "add" = ([0X08],1)
-initializeCallStackElement "sub" = ([0X09],1)
-initializeCallStackElement "mul" = ([0X0A],1)
-initializeCallStackElement "div" = ([0X0B],1)
+initializeCallStackElement "hlt" = ([0x00],0)
+initializeCallStackElement "mov" = ([0x01],2)
+initializeCallStackElement "str" = ([0x02],2)
+initializeCallStackElement "lda" = ([0x03],1)
+initializeCallStackElement "jmp" = ([0x04],1)
+initializeCallStackElement "jpz" = ([0x05],1)
+initializeCallStackElement "jnz" = ([0x06],1)
+initializeCallStackElement "jpg" = ([0x07],1)
+initializeCallStackElement "jpl" = ([0x08],1)
+initializeCallStackElement "add" = ([0x09],1)
+initializeCallStackElement "sub" = ([0x0A],1)
+initializeCallStackElement "mul" = ([0x0B],1)
+initializeCallStackElement "div" = ([0x0C],1)
 
 mergePair :: ([a],[a]) -> ([a],[a]) -> ([a],[a])
 mergePair (a,b) (c,d) = (a++c,b++d)
 
 compileCodeStack :: CodeStack -> CallStack
 compileCodeStack [] = ([],[])
-compileCodeStack (token:rest) = (compiledShard,[n]) `mergePair` (compileCodeStack truerest)
-    where compiledShard = fst $ evalState (createCallStackElement (take n rest)) icse
-          truerest = drop n rest
-          n = snd icse
+compileCodeStack (token:rest) = (compiledShard,[callsize]) `mergePair` (compileCodeStack truerest)
+    where compiledShard = fst $ evalState (createCallStackElement (take callsize rest)) icse
+          truerest = drop callsize rest
+          callsize = snd icse
           icse = initializeCallStackElement token
 
-compileCode :: String -> CallStack
-compileCode = compileCodeStack . tokenize
+getLineLabel :: String -> Int
+getLineLabel ('.':label) = read label
+getLineLabel _ = -1
+
+calculateLineLabelAddress :: String -> [Int] -> Int
+calculateLineLabelAddress token callsizes = n + sum ( take (n) callsizes )
+    where n = getLineLabel token
+
+addLineLabelsToCodeStack :: CodeStack -> CallStack -> FinalStack
+addLineLabelsToCodeStack [] ([],_) = []
+addLineLabelsToCodeStack (token:tokens) (call:calls,callsizes) = if getLineLabel token < 0 then 
+                                                                (call:(addLineLabelsToCodeStack tokens (calls,callsizes))) else 
+                                                                ((call + sum (take call callsizes)):(addLineLabelsToCodeStack tokens (calls,callsizes)))
+
+compileCode :: String -> FinalStack
+compileCode code = addLineLabelsToCodeStack (tokenize code) (compileCodeStack $ tokenize code) 

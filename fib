@@ -1,0 +1,15 @@
+str $0  [91]
+str $1  [92]
+str $10 [93]
+lda [93]
+jpg .6
+hlt
+sub $1
+mov %ra [93]
+mov [91] %ra
+add [92]
+mov %ra %rb
+mov [91] %rc
+mov %rb [91]
+mov %rc [92]
+jmp .3
