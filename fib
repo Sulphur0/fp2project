@@ -1,15 +1,20 @@
-str $0  [91]
-str $1  [92]
-str $10 [93]
-lda [93]
-jpg .6
-hlt
-sub $1
-mov %ra [93]
-lda [91]
-add [92]
-mov %ra %rb
-mov [91] %rc
-mov %rb [91]
-mov %rc [92]
-jmp .3
+; load initial values
+str $1  [91]		; 0th fib number
+str $1  [92]		; 1st fib number
+str $10 [93]		; calculate 10th fib number
+
+.loop
+lda [93]		; |
+sub $1			; |
+mov %ra [93]		; V decrement iterator
+jpg .fib		;   if iterator is 0
+hlt			;   halt
+			;   else calculate next fib number
+.fib
+lda [92]		; load nth number
+add [91]		; add to it (n-1)th number
+mov %ra %rb		; store the result, then
+mov [92] %rc		; |
+mov %rc [91]		; |
+mov %rb [92]		; V move nth number to (n-1)th
+jmp .loop		;   and (n+1)th to nth

@@ -8,33 +8,44 @@ type Memory a = [a]
 data Computer a = ACTIVE (Int,Registers a,Memory a) | HALT (Int,Registers a,Memory a)
                 deriving Show
 
+maxmem :: Int
+maxmem = 100
+-- this is very customizable
+
 envinit :: Computer Int
-envinit = ACTIVE (0,(0,0,0,0),[0 | _<-[0..99]])
+envinit = ACTIVE (0,(0,0,0,0),[0 | _<-[0..(maxmem - 1)]])
 
 envhalt :: Computer Int -> Computer Int
 envhalt (ACTIVE (pc,reg,mem)) = HALT (pc,reg,mem)
 envhalt x = x
-
+  
 loadCode :: Computer Int -> [Int] -> Computer Int
-loadCode (ACTIVE (pc,reg,mem)) code = (ACTIVE (pc,reg,code ++ drop (length code) mem))
+loadCode (ACTIVE (pc,reg,mem)) code = if length code > maxmem then error $ "Interpreter: load code: code is too long, " ++ (show $ length code) ++ "/" ++ (show maxmem)
+                                                              else (ACTIVE (pc,reg,code ++ drop (length code) mem))
 
+-- memory get set
 memget :: Memory Int -> Int -> Int
-memget mem pointer = mem !! pointer
+memget mem pointer          = if pointer > maxmem then error $ "Interpreter: get mem: pointer "++(show pointer)++" out of bounds"
+                                                  else mem !! pointer
 
 memset :: Memory Int -> Int -> Int -> Memory Int
-memset mem pointer value = (take pointer mem) ++ [value] ++ (drop (pointer+1) mem)
+memset mem pointer value    = if pointer > maxmem then error $ "Interpreter: set mem: pointer "++(show pointer)++" out of bounds"
+                                                  else (take pointer mem) ++ [value] ++ (drop (pointer+1) mem)
 
+-- register get set
 getr :: Registers Int -> Int -> Int
-getr (r,_,_,_) 0 = r
-getr (_,r,_,_) 1 = r
-getr (_,_,r,_) 2 = r
-getr (_,_,_,r) 3 = r
+getr (r,_,_,_) 0x0 = r
+getr (_,r,_,_) 0x1 = r
+getr (_,_,r,_) 0x2 = r
+getr (_,_,_,r) 0x4 = r
+getr _ inv         = error $ "Interpreter: get register: Invalid register address: " ++ (show inv)
 
-setr :: Int -> Registers Int -> Int -> Registers Int
-setr v (ra,rb,rc,rd) 0 = (v,rb,rc,rd)
-setr v (ra,rb,rc,rd) 1 = (ra,v,rc,rd)
-setr v (ra,rb,rc,rd) 2 = (ra,rb,v,rd)
-setr v (ra,rb,rc,rd) 3 = (ra,rb,rc,v)
+setr :: Registers Int -> Int -> Int -> Registers Int
+setr (ra,rb,rc,rd) 0x0 v = (v,rb,rc,rd)
+setr (ra,rb,rc,rd) 0x1 v = (ra,v,rc,rd)
+setr (ra,rb,rc,rd) 0x2 v = (ra,rb,v,rd)
+setr (ra,rb,rc,rd) 0x4 v = (ra,rb,rc,v)
+setr _ inv _             = error $ "Interpreter: set register: Invalid register address: " ++ (show inv)
 
 -- master call
 call :: Int -> Computer Int -> Computer Int
@@ -55,27 +66,45 @@ c_mul :: Int -> Computer Int -> Computer Int
 c_div :: Int -> Computer Int -> Computer Int
 
 c_hlt _ (ACTIVE x) = (HALT x)
-c_str _ (ACTIVE (pc,reg,mem)) = (ACTIVE (pc+3,reg,memset mem (memget mem (pc+2)) (memget mem (pc+1))))
-c_mov cmd (ACTIVE (pc,reg,mem)) = case mask12 of
-                                   0x1 -> case mask8 of
-                                            -- reg -> reg
-                                             0x1 -> (ACTIVE (pc+3,setr (getr reg (memget mem (pc+1))) reg (memget mem (pc+2)),mem))
-                                            -- reg -> mem
-                                             0x2 -> (ACTIVE (pc+3,reg,memset mem (memget mem (pc+2)) (getr reg (memget mem (pc+1)))))
-                                   0x2 -> case mask8 of
-                                            -- mem -> reg
-                                             0x1 -> (ACTIVE (pc+3,setr (memget mem (memget mem (pc+1))) reg (memget mem (pc+2)),mem))
+c_str cmd (ACTIVE (pc,reg,mem)) = if and [mask12 == 0x0,mask8 == 0x2] then (ACTIVE (pc+3,reg,memset mem (dst) (src)))
+                                                                      else error $ "Interpreter: str: invalid argument(s)"
     where mask8  = cmd `shiftR` 8 .&. 0xF
-          mask12 = cmd `shiftR` 12 .&. 0xF 
+          mask12 = cmd `shiftR` 12 .&. 0xF
+          src    = memget mem (pc+1)
+          dst    = memget mem (pc+2)
+
+c_mov cmd (ACTIVE (pc,reg,mem)) = case mask12 of
+                                    0x1 -> case mask8 of
+                                            -- reg -> reg
+                                             0x1 -> (ACTIVE (pc+3,setr reg (dst) (getr reg (src)),mem))
+                                            -- reg -> mem
+                                             0x2 -> (ACTIVE (pc+3,reg,memset mem (dst) (getr reg (src))))
+                                             _ -> error $ "Interpreter: mov: invalid argument passed to dst"
+                                    0x2 -> case mask8 of
+                                             -- mem -> reg
+                                             0x1 -> (ACTIVE (pc+3,setr reg (dst) (memget mem (src)),mem))
+                                             _ -> error $ "Interpreter: mov: invalid argument passed to dst"
+                                    _ -> error $ "Interpreter: mov: invalid argument passed to src"
+    where mask8  = cmd `shiftR` 8 .&. 0xF
+          mask12 = cmd `shiftR` 12 .&. 0xF
+          src    = memget mem (pc+1)
+          dst    = memget mem (pc+2)
+
 c_lda cmd (ACTIVE (pc,reg,mem)) = case mask8 of
                                   -- value
-                                  0x0 -> (ACTIVE (pc+2,setr (memget mem (pc+1)) reg 0, mem))
+                                  0x0 -> (ACTIVE (pc+2,setr reg 0 (src), mem))
                                   -- other register
-                                  0x1 -> (ACTIVE (pc+2,setr (getr reg (memget mem (pc+1))) reg 0,mem))
+                                  0x1 -> (ACTIVE (pc+2,setr reg 0 (getr reg (src)), mem))
                                   -- memory address
-                                  0x2 -> (ACTIVE (pc+2,setr (memget mem (memget mem (pc+1))) reg 0,mem))
+                                  0x2 -> (ACTIVE (pc+2,setr reg 0 (memget mem (src)), mem))
+                                  _ -> error $ "Interpreter: lda: invalid argument"
     where mask8 = cmd `shiftR` 8 .&. 0xF
-c_jmp _ (ACTIVE (pc,reg,mem)) = (ACTIVE (memget mem (pc+1),reg,mem))
+          src   = memget mem (pc+1)
+
+c_jmp cmd (ACTIVE (pc,reg,mem)) = if or [mask8==0x2,mask8==0x4] then (ACTIVE (memget mem (pc+1),reg,mem))
+                                                                else error $ "Interpreter: jmp: invalid argument"
+    where mask8 = cmd `shiftR` 8 .&. 0xF
+
 c_jpz _ (ACTIVE (pc,reg,mem)) = if (getr reg 0) == 0 then
                                                   (ACTIVE (memget mem (pc+1),reg,mem))
                                                   else
@@ -94,28 +123,36 @@ c_jpl _ (ACTIVE (pc,reg,mem)) = if (getr reg 0) < 0 then
                                                   (ACTIVE (pc+2,reg,mem))
 c_add cmd (ACTIVE (pc,reg,mem)) = case mask8 of
                                   -- mem addr
-                                  0x2 -> (ACTIVE (pc+2,setr (getr reg 0 + (memget mem (memget mem (pc+1)))) reg 0,mem))
+                                  0x2 -> (ACTIVE (pc+2,setr reg 0 (getr reg 0 + (memget mem (src))),mem))
                                   -- raw value
-                                  0x0 -> (ACTIVE (pc+2,setr (getr reg 0 + (memget mem (pc+1))) reg 0,mem))
+                                  0x0 -> (ACTIVE (pc+2,setr reg 0 (getr reg 0 + (src)),mem))
+                                  _ -> error $ "Interpreter: add: invalid argument"
     where mask8 = cmd `shiftR` 8 .&. 0xF
+          src   = memget mem (pc+1)
 c_sub cmd (ACTIVE (pc,reg,mem)) = case mask8 of
                                   -- mem addr
-                                  0x2 -> (ACTIVE (pc+2,setr (getr reg 0 - (memget mem (memget mem (pc+1)))) reg 0,mem))
+                                  0x2 -> (ACTIVE (pc+2,setr reg 0 (getr reg 0 - (memget mem (src))),mem))
                                   -- raw value
-                                  0x0 -> (ACTIVE (pc+2,setr (getr reg 0 - (memget mem (pc+1))) reg 0,mem))
+                                  0x0 -> (ACTIVE (pc+2,setr reg 0 (getr reg 0 - (src)),mem))
+                                  _ -> error $ "Interpreter: sub: invalid argument"
     where mask8 = cmd `shiftR` 8 .&. 0xF
+          src   = memget mem (pc+1)
 c_mul cmd (ACTIVE (pc,reg,mem)) = case mask8 of
                                   -- mem addr
-                                  0x2 -> (ACTIVE (pc+2,setr (getr reg 0 * (memget mem (memget mem (pc+1)))) reg 0,mem))
+                                  0x2 -> (ACTIVE (pc+2,setr reg 0 (getr reg 0 * (memget mem (src))),mem))
                                   -- raw value
-                                  0x0 -> (ACTIVE (pc+2,setr (getr reg 0 * (memget mem (pc+1))) reg 0,mem))
+                                  0x0 -> (ACTIVE (pc+2,setr reg 0 (getr reg 0 * (src)),mem))
+                                  _ -> error $ "Interpreter: mul: invalid argument"
     where mask8 = cmd `shiftR` 8 .&. 0xF
+          src   = memget mem (pc+1)
 c_div cmd (ACTIVE (pc,reg,mem)) = case mask8 of
                                   -- mem addr
-                                  0x2 -> (ACTIVE (pc+2,setr (getr reg 0 `div` (memget mem (memget mem (pc+1)))) reg 0,mem))
+                                  0x2 -> (ACTIVE (pc+2,setr reg 0 (getr reg 0 `div` (memget mem (src))),mem))
                                   -- raw value
-                                  0x0 -> (ACTIVE (pc+2,setr (getr reg 0 `div` (memget mem (pc+1))) reg 0,mem))
+                                  0x0 -> (ACTIVE (pc+2,setr reg 0 (getr reg 0 `div` (src)),mem))
+                                  _ -> error $ "Interpreter: div: invalid argument"
     where mask8 = cmd `shiftR` 8 .&. 0xF
+          src   = memget mem (pc+1)
 
 call cmd = case mask of
                  0x00 -> c_hlt cmd
@@ -131,6 +168,7 @@ call cmd = case mask of
                  0x0A -> c_sub cmd
                  0x0B -> c_mul cmd
                  0x0C -> c_div cmd
+                 _ -> error $ "Interpreter: call: received invalid call code " ++ (show mask)
     where mask = cmd .&. 0xFF
 
 
