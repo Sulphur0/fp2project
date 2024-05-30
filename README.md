@@ -8,7 +8,7 @@ Valid arguments include:
 - raw values, represented by `$<val>`
 - memory addresses, represented by `[<adr>]`
 - registers, represented by `%<reg>` - valid registers are `ra` `rb` `rc` `rd`
-- line labels, represented by `.<line>` - used in jump-like instructions. For example, `.4` means the same as the address of the call located on the 4th line of code, counting from 0
+- labels, represented by `.<line>` - used in jump-like instructions. A label is created by writing it down first on an empty line, after which any jumps to that label will automatically move the program counter to the call right after the label declaration. Labels with `<line>` set to integer `n` are automatically declared to refer to the `n`-th line of non-whitespace, no-only-comment and non-label-declaring code, counting from 0.
 
 You can call the following instructions:
 - `hlt`
@@ -27,28 +27,58 @@ You can call the following instructions:
 - `mul <arg>` - multiplies raw value `<arg>` or value under given memory address `<arg>` with value in register `ra`, stores the result in register `ra`
 - `div <arg>` - performs whole number division of value in register `ra` by the given raw value `<arg>` or value under given memory address `<arg>`, stores the result in register `ra`
 
+You can comment your code using `;`.
 
-Example:
+## Example:
 using the following code (provided in file [fib](https://github.com/Sulphur0/fp2project/blob/main/fib)) for generating the 10th fibonacci number:
-```
-str $0  [91]
-str $1  [92]
-str $10 [93]
-lda [93]
-jpg .6
-hlt
-sub $1
-mov %ra [93]
-lda [91]
-add [92]
-mov %ra %rb
-mov [91] %rc
-mov %rb [91]
-mov %rc [92]
-jmp .3
+```asm
+; load initial values
+str $1  [91]		; 0th fib number
+str $1  [92]		; 1st fib number
+str $10 [93]		; calculate 10th fib number
+
+.loop
+lda [93]		; |
+sub $1			; |
+mov %ra [93]		; V decrement iterator
+jpg .fib		;   if iterator is 0
+hlt			;   halt
+			;   else calculate next fib number
+.fib
+lda [92]		; load nth number
+add [91]		; add to it (n-1)th number
+mov %ra %rb		; store the result, then
+mov [92] %rc		; |
+mov %rc [91]		; |
+mov %rb [92]		; V move nth number to (n-1)th
+jmp .loop		;   and (n+1)th to nth
 ```
 and running main, then inputting the filename `"fib"`, yields the following result:
 
-`HALT (13,(0,55,34,0),[514,0,91,514,1,92,514,10,93,515,93,7,14,0,10,1,4609,0,93,515,91,521,92,4353,0,1,8449,91,2,4609,1,91,4609,2,92,4,9,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,55,34,0,0,0,0,0,0,0])`
+```
+ghci> :l Main
+[1 of 3] Compiling SCompilerCustom  ( SCompilerCustom.hs, interpreted )
+[2 of 3] Compiling Custom           ( Custom.hs, interpreted )
+[3 of 3] Compiling Main             ( Main.hs, interpreted )
+Ok, three modules loaded.
+ghci> main
+"fib"
+HALT (18,(0,89,55,0),[514,1,91,514,1,92,514,10,93,515,93,10,1,4609,0,93,1031,19,0,515,92,521,91,4353,0,1,8449,92,2,4609,2,91,4609,1,92,1028,9,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,55,89,0,0,0,0,0,0,0])
+```
 
-that being the final state of the simulated machine. First value in the triple, `17`, is the address of the final executed instruction (also the final program counter value), second value, `(0,55,34,0)`, are the final values of simulated registers `(ra,rb,rc,rd)`, with register `rb` containing the 10th fibonacci number and `rc` its predecessor, whereas the last triplet value is the giant 100-element array is the final image of the machine's memory.
+that being the final state of the simulated machine. First value in the triple, `18`, is the address of the final executed instruction (also the final program counter value), second value, `(0,89,55,0)`, are the final values of simulated registers `(ra,rb,rc,rd)`, with register `rc` containing the 10th fibonacci number and `rb` its successor, whereas the last triplet value is the giant 100-element array is the final image of the machine's memory.
+
+## More examples
+calculating the sum of whole numbers from 0 to 100:
+```asm
+; loop 100 times
+str $100 [50]
+lda [60]	; this code	<-here--
+add [50]	; sums numbers		|
+mov %ra [60]	; from 0 to 100		|
+		;			|
+lda [50]	;<	this code	|
+sub $1		;<	decrements	|
+mov %ra [50]	;<	the iterator	|
+jpg .1		; this jmp will jump to |
+```
