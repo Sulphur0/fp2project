@@ -1,5 +1,4 @@
-import SCompilerCustom
-import Custom
+import Machine
 
 main = do
     input <- getLine
