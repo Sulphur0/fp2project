@@ -37,16 +37,19 @@ compileLabels :: String -> Labels
 -- zip them up with a counting up array that represents valid
 -- code line numbers, then from that subtract those code lines
 -- that were themselves labels.
-compileLabels code = [(label,i-j) | ((label,i),j) <- zip (filter (\(x,_) -> isLabel x) $ zip [takeWhile (not . isSpace) line | line <- lines code, filterValidCodeLines $ trim line] [0..]) [0..]]
+compileLabels code = [(label,lineindex-labelcount) | ((label,lineindex),labelcount) <- zip (filter (\(x,_) -> isLabel x) $ zip [takeWhile (not . isSpace) line | line <- lines code, filterValidCodeLines $ trim line] [0..]) [0..]]
+-- god help me
 
 getLabel :: String -> Labels -> Int
 getLabel ('.':label) known = do
     let proposed = [(validlabel,addr) | (validlabel,addr) <- known, ('.':label) == validlabel]
-    if proposed == [] then
+    if null proposed then
+                      -- potentially number label not word label
                       case readMaybe label of
                         Nothing -> error $ "Compiler: Labels: label does not exist: "++ label
                         Just l  -> l
                       else
+                      -- this label exists
                       snd $ head proposed
 getLabel _ _ = -1
 
@@ -71,6 +74,7 @@ buildCall inv     = error $ "Compiler: Parser: invalid call to " ++ inv
 
 createCall :: Code -> State Aux Aux
 createCall [] = do
+    -- call creation is finished
     (calls,_) <- get
     return (calls,0)
     
@@ -91,7 +95,7 @@ createCall (('%':_:r:_):next) = do
                        'c' -> 0x2
                        'd' -> 0x4
                        _ -> error "Compiler: CreateCall: register code does not exist"
-    let newcall = (call .|. (shiftL 0x1 (argc*4+4))):(tail calls)++[appendcall] -- add flag to back
+    let newcall = (call .|. (shiftL 0x1 (argc*4+4))):(tail calls)++[appendcall] -- add flag to back of call
     put (newcall,argc-1)
     createCall next
 
@@ -100,7 +104,7 @@ createCall (('[':addr):next) = do
     (calls,argc) <- get
     let call = head calls
     let appendcall = read $ takeWhile (\c -> c/=']') addr
-    let newcall = (call .|. (shiftL 0x2 (argc*4+4))):(tail calls)++[appendcall]
+    let newcall = (call .|. (shiftL 0x2 (argc*4+4))):(tail calls)++[appendcall] -- add flag to back of call
     put(newcall,argc-1)
     createCall next
 
@@ -109,10 +113,10 @@ createCall (('.':label):next) = do
     -- labels are flagged with 0x4
     (calls,argc) <- get
     let call = head calls
-    let newcall = (call .|. (shiftL 0x4 (argc*4+4))):(tail calls)
+    let newcall = (call .|. (shiftL 0x4 (argc*4+4))):(tail calls) -- add flag to back of call
     case readMaybe label of
-      Nothing   -> put (newcall++[0],argc-1)
-      Just ladr -> put (newcall++[ladr],argc-1)
+      Nothing   -> put (newcall++[0],argc-1)    -- if label is text we'll sort it out later
+      Just ladr -> put (newcall++[ladr],argc-1) -- if label is number then we need to keep it
     createCall next
 
 createCall (inv:_) = error $ "Compiler: CreateCall: invalid argument " ++ inv
@@ -123,26 +127,28 @@ mergePair (a0,a1) (b0,b1) = (a0++b0,a1++b1)
 compileCodePass :: Code -> Call
 compileCodePass [] = ([],[])
 compileCodePass (token:rest) = if callsize >= 0 then
+                                                -- this code snippet was not a label, compile and add it to compiled stack
                                                 mergePair (compiled,[callsize]) (compileCodePass truerest)
                                                 else
-                                                mergePair (compiled,[]) (compileCodePass truerest) -- labels need not add their callsize
+                                                -- this code snippet was a label, it has no callsize, add flag to compiled stack
+                                                mergePair (compiled,[]) (compileCodePass truerest)
     where compiled = fst $ evalState (createCall (take callsize rest)) call
-          truerest = drop callsize rest
-          callsize = snd call
-          call = buildCall token
+          truerest = drop callsize rest     
+          callsize = snd call               
+          call = buildCall token            -- array of encoded call and arguments to it
 
 addLabelsPass :: Code -> Call -> Labels -> Final
 addLabelsPass [] ([],_) _ = []
 addLabelsPass (token:rest) (call:calls,callsizes) labels = 
     case call of
       0xff -> addLabelsPass rest (calls,callsizes) labels
-      -- since what this call was was a label, we don't need to put
+      -- since this code compiled to call was a label, we don't need to put
       -- it on the final stack
       _ -> if laddr < 0 then
-            -- there was no label, pass the call
+            -- there was no label reference as argument, pass the call
             (call:(addLabelsPass rest (calls,callsizes) labels))
             else
-            -- thre is a label and we need to precompute it
+            -- thre is a label reference and we need to compute it
             ((laddr + sum (take laddr callsizes):(addLabelsPass rest (calls,callsizes) labels)))
 
     where laddr = (getLabel token labels)

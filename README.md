@@ -65,10 +65,36 @@ ghci> :l Main
 Ok, three modules loaded.
 ghci> main
 "fib"
-Halt (18,(0,89,55,0),[514,1,91,514,1,92,514,10,93,515,93,10,1,4609,0,93,1031,19,0,515,92,521,91,4353,0,1,8449,92,2,4609,2,91,4609,1,92,1028,9,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,55,89,0,0,0,0,0,0,0],[])
+program counter: 18
+registers: 
+	a: 0
+	b: 89
+	c: 55
+	d: 0
+memory:
+0x0   :  0x202   0x1     0x5b    0x202   0x1     0x5c    0x202   0xa    
+0x8   :  0x5d    0x203   0x5d    0xa     0x1     0x1201  0x0     0x5d   
+0x10  :  0x407   0x13    0x0     0x203   0x5c    0x209   0x5b    0x1101 
+0x18  :  0x0     0x1     0x2101  0x5c    0x2     0x1201  0x2     0x5b   
+0x20  :  0x1201  0x1     0x5c    0x404   0x9     0x0     0x0     0x0    
+0x28  :  0x0     0x0     0x0     0x0     0x0     0x0     0x0     0x0    
+0x30  :  0x0     0x0     0x0     0x0     0x0     0x0     0x0     0x0    
+0x38  :  0x0     0x0     0x0     0x0     0x0     0x0     0x0     0x0    
+0x40  :  0x0     0x0     0x0     0x0     0x0     0x0     0x0     0x0    
+0x48  :  0x0     0x0     0x0     0x0     0x0     0x0     0x0     0x0    
+0x50  :  0x0     0x0     0x0     0x0     0x0     0x0     0x0     0x0    
+0x58  :  0x0     0x0     0x0     0x37    0x59    0x0     0x0     0x0    
+0x60  :  0x0     0x0     0x0     0x0    
+
+stack: empty
+
+Saving machine info to "state.info"
 ```
 
-that being the final state of the simulated machine. First value in the quadruplet, `18`, is the address of the final executed instruction (also the final program counter value), second value, `(0,89,55,0)`, are the final values of simulated registers `(ra,rb,rc,rd)`, with register `rc` containing the 10th fibonacci number and `rb` its successor, the third value is the giant 100-element array is the final image of the machine's memory, and the last value is an (empty) pc stack.
+that being the final state of the simulated machine. First value in the quadruplet, `18`, is the address of the final executed instruction (also the final program counter value), second value, `(0,89,55,0)`, are the final values of simulated registers `(ra,rb,rc,rd)`, with register `rc` containing the 10th fibonacci number and `rb` its successor, the third value is the giant 100-element array is the final image of the machine's memory, and the last value is an (empty) pc stack. The final machine state is saved to file "state.info"
+
+## Debugging
+If you want to check what your code is doing line by line, envoke the `debug` function just like you would do with `main`. In addition to saving the final machine state to "state.info" it will also save all logs of calls to "state.logs" and print them out.
 
 ## More examples
 calculating the sum of whole numbers from 0 to 100:
